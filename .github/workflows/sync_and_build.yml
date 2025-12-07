@@ -1,5 +1,14 @@
+name: Sync and Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *' # 每小时执行
+
+env:
+  TAGS: "with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_ccm,badlinkname,tfogo_checklinkname0"
 jobs:
-  sync-and-build:  
+  sync-and-build:
     runs-on: ubuntu-latest
     permissions:
       contents: write # 允许推送到仓库
@@ -15,14 +24,10 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-      # ----------------------------------------------------------------
-      # 1. 核心步骤：设置上游并强制同步代码
-      # ----------------------------------------------------------------
       - name: Setup Remotes and Force Sync
         run: |
           # 添加代码上游 (reF1nd)
           git remote add upstream https://github.com/reF1nd/sing-box
-
           echo "Fetching upstream..."
           git fetch upstream
           echo "⚠️ Force resetting code to match upstream/reF1nd-dev..."
@@ -35,9 +40,6 @@ jobs:
         with:
           go-version: "1.22"
 
-      # ----------------------------------------------------------------
-      # 2. 检查版本 (修复了因拉取官方tag导致的误判)
-      # ----------------------------------------------------------------
       - name: Check Version
         id: check_ver
         run: |
@@ -56,9 +58,6 @@ jobs:
             echo "BUILD_VERSION=$VERSION" >> $GITHUB_ENV
           fi
 
-      # ----------------------------------------------------------------
-      # 3. 保留修改 provider.go (在最新代码上打补丁)
-      # ----------------------------------------------------------------
       - name: Modify provider.go (Apply Patch)
         if: env.NEW_VERSION == 'true'
         run: |
@@ -81,9 +80,6 @@ jobs:
             exit 1
           fi
 
-      # ----------------------------------------------------------------
-      # 4. 编译构建
-      # ----------------------------------------------------------------
       - name: Build Linux AMD64
         if: env.NEW_VERSION == 'true'
         id: build
@@ -97,9 +93,6 @@ jobs:
         run: |
           zip -9 sing-box-linux-amd64.zip sing-box
 
-      # ----------------------------------------------------------------
-      # 5. 可选：推送代码回仓库 (为了保存 Release 记录)
-      # ----------------------------------------------------------------
       - name: Commit and Push
         if: env.NEW_VERSION == 'true'
         run: |
