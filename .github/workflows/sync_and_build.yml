@@ -84,18 +84,35 @@ jobs:
         if: env.NEW_VERSION == 'true'
         id: build
         run: |
-          echo "Building version: ${{ env.BUILD_VERSION }}"
-          # 注意：这里编译的是当前磁盘上的文件(已被Patch修改过)
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags "${TAGS}" -o sing-box -ldflags "-X \"github.com/sagernet/sing-box/constant.Version=${{ env.BUILD_VERSION }}\" -s -w -buildid= -checklinkname=0" ./cmd/sing-box
+          echo "Building Standard AMD64..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags "${TAGS}" -o sing-box-std -ldflags "-X \"github.com/sagernet/sing-box/constant.Version=${{ env.BUILD_VERSION }}\" -s -w -buildid= -checklinkname=0" ./cmd/sing-box
 
-      - name: Compress Binary
+      - name: Build Linux AMD64 (v3)
         if: env.NEW_VERSION == 'true'
         run: |
+          echo "Building AMD64 v3..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 go build -tags "${TAGS}" -o sing-box-v3 -ldflags "-X \"github.com/sagernet/sing-box/constant.Version=${{ env.BUILD_VERSION }}\" -s -w -buildid= -checklinkname=0" ./cmd/sing-box
+
+      # --------------------------------------------------------
+      # 打包部分
+      # --------------------------------------------------------
+      - name: Compress Binaries
+        if: env.NEW_VERSION == 'true'
+        run: |
+          # 标准版
+          cp sing-box-std sing-box
           zip -9 sing-box-linux-amd64.zip sing-box
+          rm sing-box
+          
+          # v3版
+          cp sing-box-v3 sing-box
+          zip -9 sing-box-linux-amd64v3.zip sing-box
+          rm sing-box
 
       - name: Commit and Push
         if: env.NEW_VERSION == 'true'
         run: |
+          rm -rf .github
           git add .
           git commit -m "build: sync upstream ${{ env.BUILD_VERSION }} and patch provider.go"
           
@@ -109,7 +126,9 @@ jobs:
         with:
           tag_name: ${{ env.BUILD_VERSION }}
           name: Sing-Box ${{ env.BUILD_VERSION }}
-          files: sing-box-linux-amd64.zip
+          files: |
+            sing-box-linux-amd64.zip
+            sing-box-linux-amd64v3.zip
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
