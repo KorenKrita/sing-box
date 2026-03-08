@@ -32,8 +32,8 @@ jobs:
           git fetch upstream
           echo "⚠️ Force resetting code to match upstream/reF1nd-dev..."
           # 强制将本地分支重置为上游最新状态，丢弃本地所有旧历史
-          git checkout -B reF1nd-dev upstream/reF1nd-dev
-          git reset --hard upstream/reF1nd-dev
+          git checkout -B reF1nd-testing upstream/reF1nd-testing
+          git reset --hard upstream/reF1nd-testing
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -118,7 +118,7 @@ jobs:
           
           # 必须使用 --force，因为我们刚才执行了 git reset --hard，重写了历史
           # 这会将你的仓库完全同步为“上游最新代码 + 你的Patch”
-          git push origin reF1nd-dev --force
+          git push origin reF1nd-testing --force
 
       - name: Create Release
         if: env.NEW_VERSION == 'true'
