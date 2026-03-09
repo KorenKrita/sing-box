@@ -115,6 +115,7 @@ jobs:
         if: env.NEW_VERSION == 'true'
         run: |
           cd "${SOURCE_DIR}"
+          rm -rf .github/workflows
           git remote remove mirror 2>/dev/null || true
           git remote add mirror "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           git add .
