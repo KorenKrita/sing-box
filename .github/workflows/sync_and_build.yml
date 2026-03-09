@@ -1,0 +1,145 @@
+name: Sync and Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *' # 每小时执行
+
+env:
+  UPSTREAM_REPO: "https://github.com/reF1nd/sing-box.git"
+  UPSTREAM_BRANCH: "reF1nd-testing-next"
+  MIRROR_BRANCH: "reF1nd-testing-next"
+  SOURCE_DIR: "source"
+  TAGS: "with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_ccm,badlinkname,tfogo_checklinkname0"
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 允许推送到仓库
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configure Git Identity
+        run: |
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Clone Upstream Source
+        run: |
+          rm -rf "${SOURCE_DIR}"
+          git clone --depth=1 --branch "${UPSTREAM_BRANCH}" "${UPSTREAM_REPO}" "${SOURCE_DIR}"
+          git -C "${SOURCE_DIR}" fetch --tags --force origin
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.5"
+
+      - name: Check Version
+        id: check_ver
+        run: |
+          # 计算版本号 (此时能读到上游 tags，所以版本号是正确的)
+          VERSION=$(cd "${SOURCE_DIR}" && CGO_ENABLED=0 go run ./cmd/internal/read_tag)
+          echo "Upstream Version: $VERSION"
+
+          # 检查你的仓库(origin)是否已经发布过这个版本
+          # 注意：这里改用了 ls-remote origin，只检查你自己的仓库是否已构建过
+          if git ls-remote --tags origin | grep -q "refs/tags/$VERSION"; then
+            echo "⚠️ Tag $VERSION already exists in YOUR repo. Skipping."
+            echo "NEW_VERSION=false" >> $GITHUB_ENV
+          else
+            echo "✅ New version detected: $VERSION"
+            echo "NEW_VERSION=true" >> $GITHUB_ENV
+            echo "BUILD_VERSION=$VERSION" >> $GITHUB_ENV
+          fi
+
+      - name: Modify provider.go (Apply Patch)
+        if: env.NEW_VERSION == 'true'
+        run: |
+          echo "Applying patch to provider.go..."
+          TARGET_FILE=$(grep -r "a\.providerTag" "${SOURCE_DIR}" -l | head -n 1)
+
+          if [ -z "$TARGET_FILE" ]; then
+            echo "❌ Error: Could not find file containing 'a.providerTag'"
+            exit 1
+          fi
+          
+          # 执行修改
+          sed -i 's#tag = F\.ToString(a\.providerTag, "/", opt\.Tag)#tag = F.ToString(opt.Tag)#g' "$TARGET_FILE"
+          
+          # 验证修改是否成功
+          if grep -q "tag = F.ToString(opt.Tag)" "$TARGET_FILE"; then
+            echo "✅ Patch applied successfully."
+          else
+            echo "❌ Patch failed!"
+            exit 1
+          fi
+
+      - name: Build Linux AMD64
+        if: env.NEW_VERSION == 'true'
+        id: build
+        run: |
+          echo "Building Standard AMD64..."
+          cd "${SOURCE_DIR}"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags "${TAGS}" -o sing-box-std -ldflags "-X \"github.com/sagernet/sing-box/constant.Version=${{ env.BUILD_VERSION }}\" -s -w -buildid= -checklinkname=0" ./cmd/sing-box
+
+      - name: Build Linux AMD64 (v3)
+        if: env.NEW_VERSION == 'true'
+        run: |
+          echo "Building AMD64 v3..."
+          cd "${SOURCE_DIR}"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 go build -tags "${TAGS}" -o sing-box-v3 -ldflags "-X \"github.com/sagernet/sing-box/constant.Version=${{ env.BUILD_VERSION }}\" -s -w -buildid= -checklinkname=0" ./cmd/sing-box
+
+      # --------------------------------------------------------
+      # 打包部分
+      # --------------------------------------------------------
+      - name: Compress Binaries
+        if: env.NEW_VERSION == 'true'
+        run: |
+          cd "${SOURCE_DIR}"
+          # 标准版
+          cp sing-box-std sing-box
+          zip -9 sing-box-linux-amd64.zip sing-box
+          rm sing-box
+          
+          # v3版
+          cp sing-box-v3 sing-box
+          zip -9 sing-box-linux-amd64v3.zip sing-box
+          rm sing-box
+
+      - name: Commit and Push
+        if: env.NEW_VERSION == 'true'
+        run: |
+          cd "${SOURCE_DIR}"
+          git remote remove mirror 2>/dev/null || true
+          git remote add mirror "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git add .
+          git commit --allow-empty -m "build: sync upstream ${{ env.BUILD_VERSION }} and patch provider.go"
+
+          # 将“上游最新代码 + 你的 Patch”强制同步到源码分支，不影响默认分支
+          git push mirror "HEAD:refs/heads/${MIRROR_BRANCH}" --force
+
+      - name: Create Release
+        if: env.NEW_VERSION == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BUILD_VERSION }}
+          name: Sing-Box ${{ env.BUILD_VERSION }}
+          files: |
+            source/sing-box-linux-amd64.zip
+            source/sing-box-linux-amd64v3.zip
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: 1
+          keep_minimum_runs: 3
