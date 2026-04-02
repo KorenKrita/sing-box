@@ -54,33 +54,6 @@ jobs:
             echo "BUILD_VERSION=$VERSION" >> $GITHUB_ENV
           fi
 
-      - name: Modify provider.go (Apply Patch)
-        if: env.NEW_VERSION == 'true'
-        run: |
-          echo "Applying patch to provider.go..."
-          TARGET_FILE=$(grep -r "a\.providerTag" "${SOURCE_DIR}" -l | head -n 1)
-
-          if [ -z "$TARGET_FILE" ]; then
-            echo "❌ Error: Could not find file containing 'a.providerTag'"
-            exit 1
-          fi
-          
-          # 打印出修改前的代码，防患于未然
-          echo "--- 修改前的目标代码 ---"
-          grep -C 2 "a\.providerTag" "$TARGET_FILE"
-          echo "------------------------"
-
-          # 【修改点 1】去掉前缀，直接替换核心函数调用
-          sed -i 's#F\.ToString(a\.providerTag, "/", opt\.Tag)#F.ToString(opt.Tag)#g' "$TARGET_FILE"
-          
-          # 【修改点 2】验证条件也同步更改，只要查到 F.ToString(opt.Tag) 就说明成功了
-          if grep -q "F.ToString(opt.Tag)" "$TARGET_FILE"; then
-            echo "✅ Patch applied successfully."
-          else
-            echo "❌ Patch failed! 请查看上方打印的代码，确认上游是否更改了代码格式。"
-            exit 1
-          fi
-
       - name: Build Linux AMD64
         if: env.NEW_VERSION == 'true'
         id: build
