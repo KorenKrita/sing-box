@@ -42,7 +42,8 @@ jobs:
       - name: Check Version
         id: check_ver
         run: |
-          VERSION=$(cd "${SOURCE_DIR}" && CGO_ENABLED=0 go run ./cmd/internal/read_tag)
+          # 直接使用 git describe 获取版本，避免 badversion.Parse() 丢失 -reF1nd 后缀
+          VERSION=$(cd "${SOURCE_DIR}" && git describe --tags --abbrev=0 | sed 's/^v//')
           echo "Upstream Version: $VERSION"
 
           if git ls-remote --tags origin | grep -q "refs/tags/$VERSION"; then
