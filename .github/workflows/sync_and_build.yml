@@ -3,7 +3,7 @@ name: Sync and Build
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *' # 每小时执行
+    - cron: '0 11 * * *' # 每天 UTC 11:00 (北京 19:00 / 美西 04:00)
 
 env:
   UPSTREAM_REPO: "https://github.com/reF1nd/sing-box.git"
